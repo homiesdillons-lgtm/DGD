@@ -1,0 +1,28 @@
+def performanceStatistics(x, y):
+    E = y - x  # 计算误差
+    n = len(E)  # 计算样本数量
+    ME = np.mean(E)  # 计算平均误差
+    AE = np.abs(E)  # 计算绝对误差
+    MAE = np.mean(AE)  # 计算平均绝对误差
+    SE = np.power(E, 2)  # 计算平方误差
+    MSE = np.mean(SE)  # 计算均方误差
+    RMSE = np.sqrt(MSE)  # 计算均方根误差
+    RB = ((np.mean(y) - np.mean(x)) / np.mean(x)) * 100  # 计算偏差百分比
+    slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)  # 计算线性回归参数
+
+
+    R2 = r2_score(x, y)  # 计算决定系数
+    NSE = 1 - (np.sum(np.power((x - y), 2)) / np.sum(np.power((x - np.mean(x)), 2)))  # 计算Nash-Sutcliffe效率系数
+    p_value_formatted = np.format_float_scientific(p_value, precision=10)
+    print(f"原始p值: {p_value_formatted}")
+
+    # 将统计指标存储在字典中
+    stat = {'R2': R2,
+            'ME': ME,
+            'RB': RB,
+            'NSE': NSE,
+            'MAE': MAE,
+            'RMSE': RMSE,
+            'pvalue': p_value_formatted,
+            'n': n}
+    return stat

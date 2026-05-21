@@ -1,0 +1,189 @@
+import os
+import sys
+import time
+import glob
+import shutil
+import joblib
+import warnings
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+import matplotlib.pyplot as plt
+from tensorflow.keras.callbacks import ReduceLROnPlateau
+import shap
+import optuna
+import openpyxl
+import inspect
+import mgwr
+from geoshapley import GeoShapleyExplainer
+from scipy import stats
+from scipy.spatial import KDTree
+import plotly
+from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.neural_network import MLPRegressor as ANN
+from sklearn.neighbors import KNeighborsRegressor as KNN
+from sklearn.svm import SVR
+from sklearn.metrics import mean_squared_error, r2_score
+from mgwr.gwr import GWR, MGWR
+from mgwr.sel_bw import Sel_BW
+from osgeo import gdal, ogr, gdalconst
+import joblib
+from joblib import Parallel, delayed  # 用于并行处理
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import load_model
+from tensorflow.keras.losses import Huber
+# 导入所需的层
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout, BatchNormalization, \
+    GlobalAveragePooling1D
+from tensorflow.keras.optimizers import Adam
+import tensorflow as tf
+
+# 设置支持中文的字体
+plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "Heiti TC", "WenQuanYi Micro Hei"]
+# 解决负号显示问题
+plt.rcParams['axes.unicode_minus'] = False
+
+def str2(x, t):
+    x = str(x)  # 将输入的数字转换为字符串
+    xlength = int(len(x))  # 获取输入数字的长度
+    tlength = int(t)  # 将目标长度转换为整数
+    diff = tlength - xlength  # 计算长度差值
+    zerosList = []  # 初始化一个空列表，用于存储补零的字符
+    if diff >= 1:  # 如果长度差值大于等于1
+        for i in range(0, diff):  # 循环添加零到列表中
+            zerosList.append('0')
+    x = ''.join(zerosList) + x  # 将补零后的数字拼接起来
+    return x  # 返回补零后的字符串
+
+
+def dtypes(inBand):
+    GDT = inBand.DataType  # 获取输入数据集的数据类型
+    gdtype, nptype, tNDV = dtypes4GDT(GDT)  # 调用 dtypes4GDT 函数获取 gdtype、nptype 和 tNDV
+    fNDV = inBand.GetNoDataValue()  # 获取无效值
+    if isinstance(fNDV, (int, float)):  # 如果无效值是整数或浮点数类型
+        fNDV = np.array([fNDV]).astype(nptype)[0]  # 将无效值转换为 numpy 数组，并强制转换为指定的数据类型
+    else:
+        fNDV = np.nan  # 如果无效值不是整数或浮点数类型，则将其设置为 NaN
+    return gdtype, nptype, fNDV, tNDV  # 返回数据类型、numpy 类型、输入数据集的无效值和指定的无效值
+
+
+def dtypes4GDT(GDT):
+    # 定义一个字典，将 GDAL 数据类型映射到相应的 numpy 数据类型和指定的无效值
+    dic = {
+        '1': [gdal.GDT_Byte, np.uint8, 255],
+        '2': [gdal.GDT_UInt16, np.uint16, 65535],
+        '3': [gdal.GDT_Int16, np.int16, -32768],
+        '8': [gdal.GDT_CInt16, np.int16, -32768],
+        '4': [gdal.GDT_UInt32, np.uint32, 4294967295],
+        '5': [gdal.GDT_Int32, np.int32, -2147483648],
+        '9': [gdal.GDT_CInt32, np.int32, -2147483648],
+        '6': [gdal.GDT_Float32, np.float32, -3.4e38],
+        '10': [gdal.GDT_CFloat32, np.float32, -3.4e38],
+        '7': [gdal.GDT_Float64, np.float64, -1.7e308],
+        '11': [gdal.GDT_CFloat64, np.float64, -1.7e308]
+    }
+    gdtype, nptype, tNDV = dic[str(GDT)]  # 从字典中获取相应的 GDAL 数据类型、numpy 数据类型和指定的无效值
+    return gdtype, nptype, tNDV
+
+
+def rasterMetadata(inRaster):
+    inDs = gdal.Open(inRaster, gdal.GA_ReadOnly)  # 以只读模式打开输入栅格数据集
+    rows = inDs.RasterYSize  # 获取栅格数据集的行数和列数
+    cols = inDs.RasterXSize
+    GGT = inDs.GetGeoTransform()  # 获取地理转换参数
+    GP = inDs.GetProjection()  # 获取投影信息
+    inBand = inDs.GetRasterBand(1)  # 获取栅格数据集的第一个波段
+    xBlock, yBlock = inBand.GetBlockSize()  # 获取栅格数据块的大小
+    inDs = None  # 关闭栅格数据集
+    return rows, cols, GGT, GP, xBlock, yBlock  # 返回栅格数据集的元数据信息
+def createDriver(path, cols, rows, bands=1, GDT=6):
+    if os.path.exists(path):
+        os.remove(path)  # 如果文件路径已存在，则删除
+    gdtype, nptype, tNDV = dtypes4GDT(GDT)  # 获取GDAL数据类型对应的numpy数据类型和指定的无效值
+    options = ['COMPRESS=DEFLATE', 'ZLEVEL=9', 'BIGTIFF=YES', 'TILED=YES']  # 设置创建栅格数据集的选项
+    outDs = gdal.GetDriverByName("GTiff").Create(path, cols, rows, bands, GDT, options=options)  # 使用GDAL创建栅格数据集
+    return outDs, tNDV  # 返回创建的栅格数据集对象和指定的无效值
+
+
+def rasterCalc(inRasterA, inRasterB, outRaster, method='subtract'):
+    # 获取输入栅格数据集A的元数据信息
+    rows, cols, GGT, GP, xBlock, yBlock = rasterMetadata(inRasterA)
+    # 以只读模式打开输入栅格数据集A和B
+    inDsA = gdal.Open(inRasterA, gdal.GA_ReadOnly)
+    inDsB = gdal.Open(inRasterB, gdal.GA_ReadOnly)
+    # 获取输入栅格数据集A和B的第一个波段
+    inBandA = inDsA.GetRasterBand(1)
+    inBandB = inDsB.GetRasterBand(1)
+    # 获取输入栅格数据集A和B的数据类型、numpy数据类型和无效值
+    gdtypeA, nptypeA, fNDVA, tNDVA = dtypes(inBandA)
+    gdtypeB, nptypeB, fNDVB, tNDVB = dtypes(inBandB)
+    # 创建输出栅格数据集
+    outDs, NDV = createDriver(outRaster, cols, rows, bands=1, GDT=gdtypeA)
+    outBand = outDs.GetRasterBand(1)
+    # 对输入栅格数据进行块处理
+    for i in range(0, rows, yBlock):
+        if (i + yBlock) < rows:
+            numRows = yBlock
+        else:
+            numRows = rows - i
+        for j in range(0, cols, xBlock):
+            if (j + xBlock) < cols:
+                numCols = xBlock
+            else:
+                numCols = cols - j
+            # 读取输入栅格数据
+            inDataA = inBandA.ReadAsArray(j, i, numCols, numRows).astype(nptypeA)
+            inDataB = inBandB.ReadAsArray(j, i, numCols, numRows).astype(nptypeB)
+            # 根据方法计算输出数据
+            if method.lower() == 'add':
+                out = inDataA + inDataB
+            elif method.lower() == 'subtract':
+                out = inDataA - inDataB
+            elif method.lower() == 'multiply':
+                out = inDataA * inDataB
+            elif method.lower() == 'divide':
+                out = inDataA / inDataB
+            else:
+                out = np.zeros_like(inDataA)
+
+            # 将无效值替换为指定的无效值
+            out = np.where(inDataA == fNDVA, NDV, out)
+            out = np.where(inDataB == fNDVB, NDV, out)
+            # 将输出数据写入输出栅格数据集
+            outBand.WriteArray(out, j, i)
+    outBand.FlushCache()  # 刷新缓存
+    # 设置输出栅格数据集的无效值和地理信息
+    outBand.SetNoDataValue(NDV)
+    outDs.SetGeoTransform(GGT)
+    outDs.SetProjection(GP)
+    # 关闭栅格数据集
+    outDs = None
+
+
+def resample(srcDataset, matchDataset, dstDataset, method):
+    # 打开源数据集
+    src = gdal.Open(srcDataset, gdal.GA_ReadOnly)
+    src_proj = src.GetProjection()
+    src_inBand = src.GetRasterBand(1)
+    src_gdtype, src_nptype, src_fNDV, src_tNDV = dtypes(src_inBand)
+
+    # 打开匹配数据集
+    match = gdal.Open(matchDataset, gdal.GA_ReadOnly)
+    match_proj = match.GetProjection()
+    match_geot = match.GetGeoTransform()
+    match_wide = match.RasterXSize
+    match_high = match.RasterYSize
+
+    # 如果目标数据集已存在，则删除
+    if os.path.exists(dstDataset):
+        os.remove(dstDataset)
+
+    # 创建目标数据集
+    dst, NDV = createDriver(dstDataset, match_wide, match_high, bands=1, GDT=src_gdtype)
+    dst.SetGeoTransform(match_geot)
+    dst.SetProjection(match_proj)
+
+    # 使用GDAL对源数据集进行重采样
+    gdal.ReprojectImage(src, dst, src_proj, match_proj, method)
+    dst = None

@@ -1,20 +1,14 @@
 
 def residual(predicate, coarsePredicted, coarseResidual):
-    rows, cols, GGT, GP, xBlock, yBlock = rasterMetadata(predicate)  # 获取栅格的元数据信息
-    # 打开栅格和粗预测栅格数据集
+    rows, cols, GGT, GP, xBlock, yBlock = rasterMetadata(predicate)  
     inDs1 = gdal.Open(predicate, gdal.GA_ReadOnly)
     inDs2 = gdal.Open(coarsePredicted, gdal.GA_ReadOnly)
-    # 获取栅格和粗预测栅格的第一个波段
     inBand1 = inDs1.GetRasterBand(1)
     inBand2 = inDs2.GetRasterBand(1)
-    # 获取栅格和粗预测栅格的数据类型、numpy数据类型和无效值
     gdtypeBand1, nptypeBand1, fNDVBand1, tNDVBand1 = dtypes(inBand1)
     gdtypeBand2, nptypeBand2, fNDVBand2, tNDVBand2 = dtypes(inBand2)
-    # 创建输出栅格数据集
     outDs, NDV = createDriver(coarseResidual, cols, rows, bands=1, GDT=6)
     outBand = outDs.GetRasterBand(1)
-
-    # 对输入栅格数据进行块处理
     for i in range(0, rows, yBlock):
         if (i + yBlock) < rows:
             numRows = yBlock
@@ -25,42 +19,29 @@ def residual(predicate, coarsePredicted, coarseResidual):
                 numCols = xBlock
             else:
                 numCols = cols - j
-
-            # 读取栅格和粗预测栅格的数据
             inData1 = inBand1.ReadAsArray(j, i, numCols, numRows).astype(nptypeBand1)
             inData2 = inBand2.ReadAsArray(j, i, numCols, numRows).astype(nptypeBand2)
-
-            # 计算残差
             out = inData1 - inData2
-            # 将栅格和粗预测栅格中的无效值替换为指定的无效值
             out = np.where(inData1 == fNDVBand1, NDV, out)
             out = np.where(inData2 == fNDVBand2, NDV, out)
-            # 将残差写入输出栅格数据集
             outBand.WriteArray(out, j, i)
-    outBand.FlushCache()  # 刷新缓存
-    # 设置输出栅格数据集的无效值和地理信息
+    outBand.FlushCache() 
     outBand.SetNoDataValue(NDV)
     outDs.SetGeoTransform(GGT)
     outDs.SetProjection(GP)
-    # 关闭输出栅格数据集
     outDs = None
 
-
 def finalPrediction(finePredicted, fineResidual, fineMask, finalPredicted, masked=False):
-    rows, cols, GGT, GP, xBlock, yBlock = rasterMetadata(finePredicted)  # 获取细分图片的元数据信息
-    # 打开细分图片、细分残差图片和细分遮罩图片
+    rows, cols, GGT, GP, xBlock, yBlock = rasterMetadata(finePredicted)
     inDs1 = gdal.Open(finePredicted, gdal.GA_ReadOnly)
     inDs2 = gdal.Open(fineResidual, gdal.GA_ReadOnly)
     inDsMask = gdal.Open(fineMask, gdal.GA_ReadOnly)
-    # 获取细分图片、细分残差图片和细分遮图片的波段
     inBand1 = inDs1.GetRasterBand(1)
     inBand2 = inDs2.GetRasterBand(1)
     inBandMask = inDsMask.GetRasterBand(1)
-    # 获取细分图片、细分残差图片和细分遮罩图片的数据类型等信息
     gdtypeBand1, nptypeBand1, fNDVBand1, tNDVBand1 = dtypes(inBand1)
     gdtypeBand2, nptypeBand2, fNDVBand2, tNDVBand2 = dtypes(inBand2)
     gdtypeMask, nptypeMask, fNDVMask, tNDVMask = dtypes(inBandMask)
-    # 创建最终结果的输出文件
     outDs, NDV = createDriver(finalPredicted, cols, rows, bands=1, GDT=6)
     outBand = outDs.GetRasterBand(1)
     for i in range(0, rows, yBlock):
@@ -73,20 +54,16 @@ def finalPrediction(finePredicted, fineResidual, fineMask, finalPredicted, maske
                 numCols = xBlock
             else:
                 numCols = cols - j
-            inDataMask = inBandMask.ReadAsArray(j, i, numCols, numRows).astype(nptypeMask)  # 读取细分遮罩图片的数据
-            inData1 = inBand1.ReadAsArray(j, i, numCols, numRows).astype(nptypeBand1)  # 读取细分图片和细分残差图片的数据
+            inDataMask = inBandMask.ReadAsArray(j, i, numCols, numRows).astype(nptypeMask)  
+            inData1 = inBand1.ReadAsArray(j, i, numCols, numRows).astype(nptypeBand1) 
             inData2 = inBand2.ReadAsArray(j, i, numCols, numRows).astype(nptypeBand2)
-            out = inData1 + inData2  # 计算细分图片和细分残差图片的和
-            # 将缺失值替换为指定的无效值
+            out = inData1 + inData2 
             out = np.where(inData1 == fNDVBand1, NDV, out)
             out = np.where(inData2 == fNDVBand2, NDV, out)
             out = np.where(out < 0, 0, out)
-            # 如果指定了使用遮罩，则根据遮罩进行处理
             if masked:
                 out = np.where(inDataMask == 1, out, NDV)
-            # 将结果写入输出文件
             outBand.WriteArray(out, j, i)
-    # 刷新缓存并设置无效值
     outBand.FlushCache()
     outBand.SetNoDataValue(NDV)
     outDs.SetGeoTransform(GGT)
@@ -96,124 +73,79 @@ def finalPrediction(finePredicted, fineResidual, fineMask, finalPredicted, maske
 def prediction(predictors, xFeatures, predicted, X, Y, mask, modelName, model, X_a, X_b, ya, yb,
                dynamic_indices, static_indices, masked=False):
     start_time = time.time()
-    # 获取掩膜栅格元数据（行列数、投影、分辨率等）
     rows, cols, GGT, GP, xBlock, yBlock = rasterMetadata(mask)
     inDsMask = gdal.Open(mask, gdal.GA_ReadOnly)
     inBandMask = inDsMask.GetRasterBand(1)
     gdtypeMask, nptypeMask, fNDVMask, tNDVMask = dtypes(inBandMask)
-
-    # 创建输出栅格（GDT=6对应Float32）
     outDs, NDV = createDriver(predicted, cols, rows, bands=1, GDT=6)
     outBand = outDs.GetRasterBand(1)
-
-    # 打开经纬度栅格
     inDsX = gdal.Open(X, gdal.GA_ReadOnly)
     inDsY = gdal.Open(Y, gdal.GA_ReadOnly)
     inBandX = inDsX.GetRasterBand(1)
     inBandY = inDsY.GetRasterBand(1)
-
-    # 明确经纬度无效值（避免异常值影响）
     gdtypeX, nptypeX, fNDVX, tNDVX = dtypes(inBandX)
     gdtypeY, nptypeY, fNDVY, tNDVY = dtypes(inBandY)
     INVALID_VALUE = -3.40282346639e+038  # 兜底无效值（GDAL Float32默认无效值）
-
-    # 计算总块数（用于进度显示）
     total_blocks = (rows // yBlock + (1 if rows % yBlock else 0)) * \
                    (cols // xBlock + (1 if cols % xBlock else 0))
     block_count = 0
-
-    # 分块处理栅格（避免内存溢出）
     for i in range(0, rows, yBlock):
         numRows = yBlock if (i + yBlock) < rows else rows - i
         for j in range(0, cols, xBlock):
             block_count += 1
             numCols = xBlock if (j + xBlock) < cols else cols - j
-
-            # 打印处理进度（每5块或最后1块显示）
             if block_count % 5 == 0 or block_count == total_blocks:
                 progress = block_count / total_blocks * 100
                 print(f"处理块 {block_count}/{total_blocks} ({progress:.1f}%)，耗时: {time.time() - start_time:.2f}秒")
-
-            # 读取当前块的掩膜数据
             ji0 = inBandMask.ReadAsArray(j, i, numCols, numRows).astype(nptypeMask)
-
-            # 读取经纬度数据并过滤无效值
             jiX = inBandX.ReadAsArray(j, i, numCols, numRows).astype(nptypeX).flatten()
             jiY = inBandY.ReadAsArray(j, i, numCols, numRows).astype(nptypeY).flatten()
-            # 有效经纬度筛选（排除无效值）
             valid_mask_x = (jiX != fNDVX) & (jiX != INVALID_VALUE)
             valid_mask_y = (jiY != fNDVY) & (jiY != INVALID_VALUE)
-            valid_mask = valid_mask_x & valid_mask_y  # 同时满足经纬度有效
+            valid_mask = valid_mask_x & valid_mask_y 
             num_valid = valid_mask.sum()
-
-            # 无有效像素时跳过当前块
             # if num_valid == 0:
             # continue
 
-            # 生成有效像素的坐标数组（Lon, Lat）
             XY = np.array(list(zip(jiX[valid_mask], jiY[valid_mask])))
-
-            # 读取并处理当前块的所有特征数据
             Xs = []
             for xFeature in xFeatures:
                 inDs = gdal.Open(predictors[xFeature], gdal.GA_ReadOnly)
                 inBand = inDs.GetRasterBand(1)
                 gdtype, nptype, fNDV, tNDV = dtypes(inBand)
-                # 读取特征数据并展平
                 ji = inBand.ReadAsArray(j, i, numCols, numRows).astype(nptype).flatten()
-                # 仅保留有效像素的特征值
                 ji_valid = ji[valid_mask]
-                # 替换特征无效值为0（避免NaN影响模型）
                 ji_valid = np.where(ji_valid == fNDV, 0, ji_valid)
                 ji_valid = ji_valid.astype(np.float32)
-                # 特征标准化（与训练时一致）
                 feature_idx = xFeatures.index(xFeature)
                 xa = float(X_b[feature_idx])
                 xb = float(X_a[feature_idx])
-                ji_valid = (ji_valid - xa) / (xb + 1e-8)  # 加1e-8避免除零
+                ji_valid = (ji_valid - xa) / (xb + 1e-8) 
                 Xs.append(ji_valid)
-
-            # 调整特征数组形状（样本数 × 特征数）
             Xs = np.array(Xs).T
-            Xs = np.clip(Xs, -1e6, 1e6)  # 限制极值，避免异常预测
-
-            # --------------------------
-            # 关键修改：单模型预测（删除集成模型判断）
-            # --------------------------
+            Xs = np.clip(Xs, -1e6, 1e6)  
             if modelName == 'GWRCNN':
-                # 直接调用单模型的predict方法（批量预测，避免内存压力）
                 preds = model.predict(Xs, XY, batch_size=64)
             else:
-                # 其他模型（如ANN/SVR）的预测逻辑（保持不变）
                 if len(Xs.shape) == 2:
                     Xs_reshaped = Xs.reshape(Xs.shape[0], Xs.shape[1], 1)
                     preds = model.predict(Xs_reshaped, verbose=0)
                 else:
                     preds = model.predict(Xs, verbose=0)
-
-            # 预测结果后处理
-            preds = preds.flatten()  # 展平为1D数组
-            preds = (preds * ya) + yb  # 反标准化（恢复原始尺度）
-            preds = np.maximum(preds, 0.1)  # 降水值不小于0.1（合理物理意义）
-
-            # 重建当前块的输出数据（无效值填充为NDV）
+            preds = preds.flatten()  
+            preds = (preds * ya) + yb  
+            preds = np.maximum(preds, 0.1)  
             out_data = np.full(numRows * numCols, NDV, dtype=np.float32)
             out_data[valid_mask] = preds
             out_data = out_data.reshape(numRows, numCols)
 
-            # 若需掩膜，仅保留掩膜内的有效预测值
             if masked:
                 out_data = np.where(ji0 == 1, out_data, NDV)
-
-            # 将当前块结果写入输出栅格
             outBand.WriteArray(out_data, j, i)
-
-    # 释放资源并保存栅格信息
-    outBand.FlushCache()  # 刷新缓存，确保数据写入
-    outBand.SetNoDataValue(NDV)  # 设置无效值
-    outDs.SetGeoTransform(GGT)  # 写入地理坐标变换
-    outDs.SetProjection(GP)  # 写入投影信息
-    # 关闭所有打开的数据集
+    outBand.FlushCache() 
+    outBand.SetNoDataValue(NDV) 
+    outDs.SetGeoTransform(GGT)  
+    outDs.SetProjection(GP)  
     outDs = None
     inDsMask = None
     inDsX = None

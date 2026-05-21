@@ -1,1 +1,136 @@
+class EnhancedGWRCNN:
+    def __init__(self, bw=None, kernel='Adaptive', spatial_weights=True,
+                 cnn_params=None, n_jobs=1):
+        self.bw = bw  # GWR带宽（由参数筛选确定）
+        self.kernel = kernel  
+        self.spatial_weights = spatial_weights
+        self.cnn_params = cnn_params if cnn_params else {
+            'filters1': 16, 'kernel_size1': 2, 'filters2': 32, 'kernel_size2': 2,
+            'dense_units': 32, 'dropout': 0.2
+        }
+        self.n_jobs = n_jobs
+
+        self.cnn_extractor = None  
+        self.local_gwrs = {}  
+        self.global_gwr = None  
+
+        self.coords_train = None
+        self.X_dynamic_train = None  
+        self.X_static_train = None 
+        self.y_train = None
+        self.cnn_features_train = None 
+        self.kd_tree = None  
+
+        # 特征索引
+        self.dynamic_feature_indices = None
+        self.static_feature_indices = None
+
+    def _calc_spatial_weights(self, distances, h):
+        weights = (1 - (distances / h) ** 2) ** 2
+        weights[distances > h] = 0
+        weights_sum = np.sum(weights)
+        if weights_sum == 0:
+            return np.ones_like(weights) / len(weights)
+        return weights / weights_sum  
+
+    def _fit_local_gwr(self, X_features, y, coords_local, weights=None):
+        X_gwr = np.hstack([np.ones((X_features.shape[0], 1)), X_features])
+        alpha = 1e-5
+
+        if weights is not None:
+            W = np.diag(weights)
+            XTW = X_gwr.T @ W
+            XTWX = XTW @ X_gwr + alpha * np.eye(X_gwr.shape[1])  
+            XTWy = XTW @ y
+        else:
+            XTWX = X_gwr.T @ X_gwr + alpha * np.eye(X_gwr.shape[1])
+            XTWy = X_gwr.T @ y
+        try:
+            beta = np.linalg.solve(XTWX, XTWy)
+        except np.linalg.LinAlgError:
+            beta = np.linalg.pinv(XTWX) @ XTWy
+        return beta
+
+    def fit(self, X, y, coords, dynamic_indices, static_indices, cnn_extractor=None):
+        start_time = time.time()
+        self.dynamic_feature_indices = dynamic_indices
+        self.static_feature_indices = static_indices
+        self.X_dynamic_train = X[:, dynamic_indices]
+        self.X_static_train = X[:, static_indices]
+        self.y_train = y
+        self.coords_train = coords
+
+        if cnn_extractor is not None:
+            self.cnn_extractor = cnn_extractor
+        else:
+            self.cnn_extractor = TransferCNNFeatureExtractor(cnn_params=self.cnn_params)
+            self.cnn_extractor.train_shared_extractor(self.X_dynamic_train, y, epochs=100)
+
+        self.cnn_features_train = self.cnn_extractor.extract_features(self.X_dynamic_train)
+        self.combined_features_train = np.hstack([self.cnn_features_train, self.X_static_train])
+
+        self.kd_tree = KDTree(coords)
+        self.global_gwr = self._fit_local_gwr(
+            self.combined_features_train, y, coords, weights=None
+        )
+       
+    def _predict_batch(self, X_test_batch, coords_batch):
+        X_dynamic_batch = X_test_batch[:, self.dynamic_feature_indices]
+        X_static_batch = X_test_batch[:, self.static_feature_indices]
+        X_cnn_batch = self.cnn_extractor.extract_features(X_dynamic_batch)
+        X_comb_batch = np.hstack([X_cnn_batch, X_static_batch])
+
+        predictions = []
+        for test_coord, x_comb in zip(coords_batch, X_comb_batch):
+            if self.kernel == 'Adaptive':
+                n_neighbors = min(self.bw, len(self.coords_train) - 1)
+                if n_neighbors <= 0:
+                    beta = self.global_gwr  
+                else:
+                    distances, idx = self.kd_tree.query(test_coord, k=n_neighbors)
+                    h = distances[-1] 
+                    weights = self._calc_spatial_weights(distances, h)
+                    model_key = tuple(sorted(idx))
+                    if model_key not in self.local_gwrs:
+                        self.local_gwrs[model_key] = self._fit_local_gwr(
+                            self.combined_features_train[idx], self.y_train[idx],
+                            self.coords_train[idx], weights
+                        )
+                    beta = self.local_gwrs[model_key]
+            else:
+                idx = self.kd_tree.query_ball_point(test_coord, self.bw)
+                if not idx:
+                    beta = self.global_gwr
+                else:
+                    distances = distance_matrix([test_coord], self.coords_train[idx])[0]
+                    weights = self._calc_spatial_weights(distances, self.bw)
+                    model_key = tuple(sorted(idx))
+                    if model_key not in self.local_gwrs:
+                        self.local_gwrs[model_key] = self._fit_local_gwr(
+                            self.combined_features_train[idx], self.y_train[idx],
+                            self.coords_train[idx], weights
+                        )
+                    beta = self.local_gwrs[model_key]
+            x_gwr = np.hstack([1, x_comb])
+            predictions.append(np.dot(x_gwr, beta))
+        return np.array(predictions)
+
+    def predict(self, X, coords, batch_size=32):
+        start_time = time.time()
+        num_samples = len(X)
+        predictions = []
+        for i in range(0, num_samples, batch_size):
+            end_idx = min(i + batch_size, num_samples)
+            batch_X = X[i:end_idx]
+            batch_coords = coords[i:end_idx]
+
+            batch_preds = self._predict_batch(batch_X, batch_coords)
+            predictions.extend(batch_preds)
+
+            if i % (batch_size * 50) == 0:
+                progress = min(i / num_samples * 100, 100)
+                print(f"预测进度: {progress:.1f}% ({i}/{num_samples})")
+
+        print(f"预测完成，耗时: {time.time() - start_time:.2f}秒")
+        return np.array(predictions)
 

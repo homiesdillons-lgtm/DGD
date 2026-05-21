@@ -1,0 +1,48 @@
+def rasters2XyTable():
+    predicates = glob.glob(os.path.join(predicateF, '*.tif'))  # 获取所有的栅格文件
+    coarseDynamicPredictors = []  # 初始化粗动态预测器列表和特征列表
+    features = []
+    # 遍历每个栅格文件
+    for predicate in predicates:
+        # 获取与栅格文件相关联的粗静态预测器文件列表
+        coarseStaticPredictors = glob.glob(os.path.join(coarseStaticPredictorsF, '*.tif'))
+        ID = os.path.split(predicate)[1].split('.')[0].split('_')[1]  # 从栅格文件中提取ID
+        coarseDynamicPredictors = glob.glob(
+            os.path.join(coarseDynamicPredictorsF, '*_{}.tif'.format(ID)))  # 获取与栅格文件相关联的粗动态预测器文件列表
+        variables = coarseStaticPredictors + coarseDynamicPredictors + [predicate]
+        variables.sort()
+
+        # 生成XyTable文件的路径
+        XyTable = os.path.join(Xy, 'XyTable_{}.csv'.format(ID))
+        if len(variables) > 0:
+            data = {}
+            # 遍历所有的变量
+            for variable in variables:
+                # 从变量路径中提取变量的名称
+                name = os.path.split(variable)[1].split('.')[0].split('_')[0]
+                # 打开栅格数据集
+                inDs = gdal.Open(variable, gdal.GA_ReadOnly)
+                inBand = inDs.GetRasterBand(1)
+                gdtype, nptype, fNDV, tNDV = dtypes(inBand)  # 获取预测变量栅格数据的数据类型、numpy数据类型和无效值
+                inArray = inBand.ReadAsArray().astype(nptype).flatten()  # 读取栅格数据并转换为numpy数组
+                if fNDV:
+                    inArray = np.where(inArray == fNDV, np.nan, inArray)  # 将无效值替换为NaN
+                data[name] = inArray  # 将数据存储到字典中
+
+            dfXy = pd.DataFrame.from_dict(data)  # 将字典转换为DataFrame
+            dfXy = dfXy.dropna()  # 删除包含NaN值的行
+
+            cols = list(dfXy.columns)  # 获取DataFrame中的列名
+            for col in cols:
+                if col not in features:
+                    features.append(col)  # 更新特征列表
+            if 'Mas' in cols:
+                cols.remove('Mas')  # 如果'Mas'列存在，将其移除
+
+            # 重新排列DataFrame中的列
+            dfXy = dfXy[cols]
+            print('Creating {} variables of {}: XyTable_{}'.format(len(cols), len(variables), ID))
+            dfXy.to_csv(XyTable, index=False)  # 将DataFrame写入CSV文件
+    features.sort()  # 对特征列表进行排序
+    print('\nFeatures')
+    return features

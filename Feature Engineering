@@ -1,0 +1,21 @@
+def create_interaction_features(X, dynamic_indices, static_indices):
+    """创建特征交互项，增强特征表达能力"""
+    dynamic = X[:, dynamic_indices]
+    static = X[:, static_indices]
+
+    dyn_interactions = []
+    for i in range(dynamic.shape[1]):
+        for j in range(i + 1, dynamic.shape[1]):
+            dyn_interactions.append(dynamic[:, i] * dynamic[:, j])
+    cross_interactions = []
+    for i in range(dynamic.shape[1]):
+        for j in range(static.shape[1]):
+            cross_interactions.append(dynamic[:, i] * static[:, j])
+    static_quad = []
+    for j in range(static.shape[1]):
+        static_quad.append(static[:, j] ** 2) 
+    if static.shape[1] >= 2: 
+        static_quad.append(static[:, 0] * static[:, 1])
+    # 组合所有特征
+    all_interactions = dyn_interactions + cross_interactions + static_quad
+    return np.column_stack([X] + all_interactions)

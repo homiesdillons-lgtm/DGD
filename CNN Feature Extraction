@@ -6,6 +6,7 @@ class TransferCNNFeatureExtractor:
             'dense_units': 16, 'dropout': 0.3
         }
         self.model = None
+        self.feature_model = None
         self.input_shape = None
 
     def build_base_extractor(self, input_shape):
@@ -32,9 +33,15 @@ class TransferCNNFeatureExtractor:
             Dropout(self.cnn_params['dropout'], name='drop2'),
             GlobalAveragePooling1D(name='gap'),  
             Dense(self.cnn_params['dense_units'], activation='relu', name='dense1')
+            Dense(1, activation='linear', name='rain_output')
         ])
-
+        return model
+    def build_feature_extractor(self):
+        self.feature_model = tf.keras.Model(
+            inputs=self.model.input,
+            outputs=self.model.get_layer('dense1').output
+        )
     def extract_features(self, X_dynamic):
         """提取特征"""
         X_reshaped = X_dynamic.reshape(X_dynamic.shape[0], X_dynamic.shape[1], 1)
-        return self.model.predict(X_reshaped, verbose=0)
+        return self.feature_model.predict(X_reshaped, verbose=0)

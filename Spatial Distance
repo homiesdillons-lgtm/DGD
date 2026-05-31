@@ -12,6 +12,6 @@ def haversine_distance_vectorized(coords1, coords2):
     return R * c  
 
 def distance_matrix(coords1, coords2):
-    print(f"计算距离矩阵: {len(coords1)} × {len(coords2)} 点对")
+    print(f"计算: {len(coords1)} × {len(coords2)} 点对")
     return haversine_distance_vectorized(coords1, coords2)
 

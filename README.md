@@ -4,7 +4,7 @@ The CHM_PRE V2 daily precipitation dataset was selected as the target product fo
 
 #cloud data
 
-The Sentinel-5P satellite, launched by the European Space Agency (ESA) on 13 October 2017, is equipped with the TROPOMI for monitoring atmospheric gases and aerosols. Sentinel-5P cloud physical products are available in near real time (NRTI) and offline (OFFL) modes. The OFFL cloud physical products are typically released with a post-processing latency ranging from several hours to a few days. Compared with NRTI, the OFFL Level 3 cloud products undergo more comprehensive calibration and quality assurance procedures. Therefore, cloud physical variables derived from the OFFL Level-3 product were used as dynamic downscaling predictors, including CTP, CTH, CBP, CBH, CLF, and COD. The Level‑3 products are gridded at a spatial resolution of 1113.2m (~0.01°), which effectively represents the spatial distribution, vertical structure, and optical properties of clouds.
+The Sentinel-5P satellite, launched by the European Space Agency (ESA) on 13 October 2017, is equipped with the TROPOMI for monitoring atmospheric gases and aerosols. Sentinel-5P cloud physical products are available in near real time (NRTI) and offline (OFFL) modes. The OFFL cloud physical products are typically released with a post-processing latency ranging from several hours to a few days. Compared with NRTI, the OFFL Level 3 cloud products undergo more comprehensive calibration and quality assurance procedures. 
 
 #topographic data
 

@@ -8,8 +8,6 @@ def performanceStatistics(x, y):
     RMSE = np.sqrt(MSE)  
     RB = ((np.mean(y) - np.mean(x)) / np.mean(x)) * 100 
     slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)  
-
-
     R2 = r2_score(x, y)  
     NSE = 1 - (np.sum(np.power((x - y), 2)) / np.sum(np.power((x - np.mean(x)), 2)))  
     p_value_formatted = np.format_float_scientific(p_value, precision=10)

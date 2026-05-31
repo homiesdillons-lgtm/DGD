@@ -104,8 +104,6 @@ def prediction(predictors, xFeatures, predicted, X, Y, mask, modelName, model, X
             valid_mask_y = (jiY != fNDVY) & (jiY != INVALID_VALUE)
             valid_mask = valid_mask_x & valid_mask_y 
             num_valid = valid_mask.sum()
-            # if num_valid == 0:
-            # continue
 
             XY = np.array(list(zip(jiX[valid_mask], jiY[valid_mask])))
             Xs = []

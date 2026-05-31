@@ -15,7 +15,6 @@ import optuna
 import openpyxl
 import inspect
 import mgwr
-from geoshapley import GeoShapleyExplainer
 from scipy import stats
 from scipy.spatial import KDTree
 import plotly

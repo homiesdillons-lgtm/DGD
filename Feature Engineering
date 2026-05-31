@@ -1,5 +1,4 @@
 def create_interaction_features(X, dynamic_indices, static_indices):
-    """创建特征交互项，增强特征表达能力"""
     dynamic = X[:, dynamic_indices]
     static = X[:, static_indices]
 

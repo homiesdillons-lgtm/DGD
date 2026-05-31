@@ -33,7 +33,7 @@ def rasters2XyTable():
 
             dfXy = dfXy[cols]
             print('Creating {} variables of {}: XyTable_{}'.format(len(cols), len(variables), ID))
-            dfXy.to_csv(XyTable, index=False)  # 将DataFrame写入CSV文件
+            dfXy.to_csv(XyTable, index=False)  
     features.sort() 
     print('\nFeatures')
     return features

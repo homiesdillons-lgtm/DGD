@@ -5,8 +5,8 @@ class EnhancedGWRCNN:
         self.kernel = kernel  
         self.spatial_weights = spatial_weights
         self.cnn_params = cnn_params if cnn_params else {
-            'filters1': 16, 'kernel_size1': 2, 'filters2': 32, 'kernel_size2': 2,
-            'dense_units': 32, 'dropout': 0.2
+            'filters1': 32, 'kernel_size1': 2, 'filters2': 64, 'kernel_size2': 2,
+            'dense_units': 64, 'dropout': 0.2
         }
         self.n_jobs = n_jobs
 
